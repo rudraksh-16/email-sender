@@ -10,6 +10,7 @@ export interface SmtpAccount {
   from_name?: string;
   max_per_minute: number;
   max_per_hour: number;
+  max_per_day: number;
   is_default: boolean;
   has_password: boolean;
   created_at: string;
@@ -28,6 +29,7 @@ export interface SmtpAccountCreate {
   from_name?: string;
   max_per_minute?: number;
   max_per_hour?: number;
+  max_per_day?: number;
   is_default?: boolean;
 }
 

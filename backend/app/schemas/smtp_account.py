@@ -16,6 +16,7 @@ class SmtpAccountBase(BaseModel):
     from_name: str | None = None
     max_per_minute: int = Field(default=30, gt=0)
     max_per_hour: int = Field(default=500, gt=0)
+    max_per_day: int = Field(default=2000, gt=0)
     is_default: bool = False
 
 
@@ -35,6 +36,7 @@ class SmtpAccountUpdate(BaseModel):
     from_name: str | None = None
     max_per_minute: int | None = None
     max_per_hour: int | None = None
+    max_per_day: int | None = None
     is_default: bool | None = None
 
 

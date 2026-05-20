@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, CheckCircle, XCircle } from "lucide-react";
+import { Plus, Trash2, CheckCircle, XCircle, Pencil } from "lucide-react";
 import { smtpApi } from "@/api/smtp";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
-import type { SmtpAccountCreate } from "@/api/types";
+import type { SmtpAccount, SmtpAccountCreate } from "@/api/types";
 
 const EMPTY: SmtpAccountCreate = {
   name: "",
@@ -21,8 +21,94 @@ const EMPTY: SmtpAccountCreate = {
   from_name: "",
   max_per_minute: 30,
   max_per_hour: 500,
+  max_per_day: 2000,
   is_default: false,
 };
+
+type ModalMode = "add" | "edit" | null;
+
+function accountToForm(a: SmtpAccount): SmtpAccountCreate {
+  return {
+    name: a.name,
+    host: a.host,
+    port: a.port,
+    username: a.username ?? "",
+    password: "",
+    use_tls: a.use_tls,
+    use_ssl: a.use_ssl,
+    from_email: a.from_email,
+    from_name: a.from_name ?? "",
+    max_per_minute: a.max_per_minute,
+    max_per_hour: a.max_per_hour,
+    max_per_day: a.max_per_day,
+    is_default: a.is_default,
+  };
+}
+
+interface SmtpFormProps {
+  form: SmtpAccountCreate;
+  onChange: (field: keyof SmtpAccountCreate, value: unknown) => void;
+  isEdit?: boolean;
+  error?: string;
+  isPending?: boolean;
+  onCancel: () => void;
+}
+
+function SmtpForm({ form, onChange, isEdit, error, isPending, onCancel }: SmtpFormProps) {
+  const f = (field: keyof SmtpAccountCreate) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      const val = e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value;
+      onChange(field, val);
+    };
+
+  return (
+    <div className="space-y-3">
+      <Input label="Name" value={form.name} onChange={f("name")} required />
+      <div className="grid grid-cols-2 gap-3">
+        <Input label="Host" value={form.host} onChange={f("host")} required />
+        <Input label="Port" type="number" value={form.port} onChange={f("port")} required />
+      </div>
+      <Input label="Username" value={form.username} onChange={f("username")} />
+      <Input
+        label={isEdit ? "New password (leave blank to keep current)" : "Password"}
+        type="password"
+        value={form.password}
+        onChange={f("password")}
+        required={!isEdit}
+      />
+      <div className="grid grid-cols-2 gap-3">
+        <Input label="From email" type="email" value={form.from_email} onChange={f("from_email")} required />
+        <Input label="From name" value={form.from_name} onChange={f("from_name")} />
+      </div>
+      <Select
+        label="Security"
+        value={form.use_ssl ? "ssl" : form.use_tls ? "tls" : "none"}
+        onChange={(e) => {
+          onChange("use_ssl", e.target.value === "ssl");
+          onChange("use_tls", e.target.value === "tls");
+        }}
+      >
+        <option value="tls">STARTTLS</option>
+        <option value="ssl">SSL/TLS (implicit)</option>
+        <option value="none">None</option>
+      </Select>
+      <div className="grid grid-cols-3 gap-3">
+        <Input label="Max / minute" type="number" value={form.max_per_minute} onChange={f("max_per_minute")} />
+        <Input label="Max / hour" type="number" value={form.max_per_hour} onChange={f("max_per_hour")} />
+        <Input label="Max / day" type="number" value={form.max_per_day} onChange={f("max_per_day")} />
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={form.is_default} onChange={f("is_default")} />
+        Set as default
+      </label>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex justify-end gap-2 pt-2">
+        <Button variant="secondary" type="button" onClick={onCancel}>Cancel</Button>
+        <Button type="submit" loading={isPending}>{isEdit ? "Save changes" : "Save"}</Button>
+      </div>
+    </div>
+  );
+}
 
 export function SmtpSettingsPage() {
   const qc = useQueryClient();
@@ -31,16 +117,45 @@ export function SmtpSettingsPage() {
     queryFn: smtpApi.list,
   });
 
-  const [modal, setModal] = useState<"add" | null>(null);
+  const [modal, setModal] = useState<ModalMode>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<SmtpAccountCreate>(EMPTY);
   const [testResult, setTestResult] = useState<Record<string, { ok: boolean; error?: string }>>({});
+
+  const setField = (field: keyof SmtpAccountCreate, value: unknown) =>
+    setForm((prev) => ({ ...prev, [field]: value }));
+
+  const openAdd = () => {
+    setForm(EMPTY);
+    setEditId(null);
+    setModal("add");
+  };
+
+  const openEdit = (a: SmtpAccount) => {
+    setForm(accountToForm(a));
+    setEditId(a.id);
+    setModal("edit");
+  };
+
+  const closeModal = () => {
+    setModal(null);
+    setEditId(null);
+  };
 
   const create = useMutation({
     mutationFn: smtpApi.create,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["smtp-accounts"] });
-      setModal(null);
-      setForm(EMPTY);
+      closeModal();
+    },
+  });
+
+  const update = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<SmtpAccountCreate> }) =>
+      smtpApi.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["smtp-accounts"] });
+      closeModal();
     },
   });
 
@@ -54,16 +169,22 @@ export function SmtpSettingsPage() {
     onSuccess: (data, id) => setTestResult((prev) => ({ ...prev, [id]: data })),
   });
 
-  const f = (field: keyof SmtpAccountCreate) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const val = e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value;
-    setForm((prev) => ({ ...prev, [field]: val }));
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (modal === "edit" && editId) {
+      const payload: Partial<SmtpAccountCreate> = { ...form };
+      if (!payload.password) delete payload.password;
+      update.mutate({ id: editId, data: payload });
+    } else {
+      create.mutate(form);
+    }
   };
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">SMTP Settings</h1>
-        <Button onClick={() => setModal("add")}>
+        <Button onClick={openAdd}>
           <Plus size={16} /> Add account
         </Button>
       </div>
@@ -88,7 +209,7 @@ export function SmtpSettingsPage() {
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {a.host}:{a.port} · {a.use_ssl ? "SSL" : a.use_tls ? "STARTTLS" : "plain"} ·
-                  {a.max_per_minute}/min
+                  {a.max_per_minute}/min · {a.max_per_hour}/hr · {a.max_per_day}/day
                 </p>
                 {testResult[a.id] && (
                   <div className={`flex items-center gap-1 text-xs mt-1 ${testResult[a.id].ok ? "text-green-600" : "text-red-600"}`}>
@@ -107,6 +228,13 @@ export function SmtpSettingsPage() {
                   Test
                 </Button>
                 <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => openEdit(a)}
+                >
+                  <Pencil size={14} />
+                </Button>
+                <Button
                   variant="danger"
                   size="sm"
                   onClick={() => {
@@ -121,53 +249,21 @@ export function SmtpSettingsPage() {
         </div>
       )}
 
-      <Modal open={modal === "add"} onClose={() => setModal(null)} title="Add SMTP account" className="max-w-xl">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            create.mutate(form);
-          }}
-          className="space-y-3"
-        >
-          <Input label="Name" value={form.name} onChange={f("name")} required />
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Host" value={form.host} onChange={f("host")} required />
-            <Input label="Port" type="number" value={form.port} onChange={f("port")} required />
-          </div>
-          <Input label="Username" value={form.username} onChange={f("username")} />
-          <Input label="Password" type="password" value={form.password} onChange={f("password")} />
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="From email" type="email" value={form.from_email} onChange={f("from_email")} required />
-            <Input label="From name" value={form.from_name} onChange={f("from_name")} />
-          </div>
-          <Select
-            label="Security"
-            value={form.use_ssl ? "ssl" : form.use_tls ? "tls" : "none"}
-            onChange={(e) =>
-              setForm((prev) => ({
-                ...prev,
-                use_ssl: e.target.value === "ssl",
-                use_tls: e.target.value === "tls",
-              }))
-            }
-          >
-            <option value="tls">STARTTLS</option>
-            <option value="ssl">SSL/TLS (implicit)</option>
-            <option value="none">None</option>
-          </Select>
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Max per minute" type="number" value={form.max_per_minute} onChange={f("max_per_minute")} />
-            <Input label="Max per hour" type="number" value={form.max_per_hour} onChange={f("max_per_hour")} />
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={form.is_default} onChange={f("is_default")} />
-            Set as default
-          </label>
-          {create.error && <p className="text-xs text-red-600">{String(create.error)}</p>}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" type="button" onClick={() => setModal(null)}>Cancel</Button>
-            <Button type="submit" loading={create.isPending}>Save</Button>
-          </div>
+      <Modal
+        open={modal !== null}
+        onClose={closeModal}
+        title={modal === "edit" ? "Edit SMTP account" : "Add SMTP account"}
+        className="max-w-xl"
+      >
+        <form onSubmit={handleSubmit}>
+          <SmtpForm
+            form={form}
+            onChange={setField}
+            isEdit={modal === "edit"}
+            error={create.isError ? String(create.error) : update.isError ? String(update.error) : undefined}
+            isPending={create.isPending || update.isPending}
+            onCancel={closeModal}
+          />
         </form>
       </Modal>
     </div>
