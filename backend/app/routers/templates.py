@@ -1,4 +1,5 @@
 """Email templates CRUD + preview render."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status

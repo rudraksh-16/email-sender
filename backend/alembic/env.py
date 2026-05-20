@@ -4,6 +4,7 @@ Synchronous migrations against SQLite. The DB URL is read at runtime from
 ``Settings`` so the same env.py works from CLI (alembic command) and from the
 app's startup hook.
 """
+
 from __future__ import annotations
 
 import sys

@@ -1,4 +1,5 @@
 """FastAPI application factory + static-frontend mount."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager

@@ -3,6 +3,7 @@
 Spawned by FastAPI BackgroundTasks per campaign. Pulls queued EmailLog rows,
 renders + sanitises + sends each, updates status, respects the rate limiter.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,10 +34,10 @@ async def _load_attachments(campaign_id: str) -> list[SmtpAttachment]:
     Session = get_session_factory()
     async with Session() as session:
         rows = (
-            await session.execute(
-                select(Attachment).where(Attachment.campaign_id == campaign_id)
-            )
-        ).scalars().all()
+            (await session.execute(select(Attachment).where(Attachment.campaign_id == campaign_id)))
+            .scalars()
+            .all()
+        )
         return [
             SmtpAttachment(
                 filename=row.filename,
@@ -136,9 +137,7 @@ async def run_campaign(campaign_id: str) -> None:
                     select(EmailLog)
                     .where(
                         EmailLog.campaign_id == campaign_id,
-                        EmailLog.status.in_(
-                            [EmailLogStatus.queued, EmailLogStatus.retrying]
-                        ),
+                        EmailLog.status.in_([EmailLogStatus.queued, EmailLogStatus.retrying]),
                     )
                     .limit(1)
                 )

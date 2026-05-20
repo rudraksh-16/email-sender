@@ -1,4 +1,5 @@
 """aiosmtplib wrapper: connect, AUTH, send EmailMessage."""
+
 from __future__ import annotations
 
 import logging

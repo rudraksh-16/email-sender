@@ -1,4 +1,5 @@
 """Bulk-send campaigns: queue jobs, watch progress, retry failed rows."""
+
 from __future__ import annotations
 
 import json
@@ -114,9 +115,7 @@ async def _persist_campaign_with_rows(
 
 @router.get("", response_model=list[CampaignRead])
 async def list_campaigns(db: AsyncSession = Depends(get_db)) -> list[CampaignRead]:
-    rows = (
-        await db.execute(select(Campaign).order_by(Campaign.created_at.desc()))
-    ).scalars().all()
+    rows = (await db.execute(select(Campaign).order_by(Campaign.created_at.desc()))).scalars().all()
     return [_campaign_to_read(r) for r in rows]
 
 
@@ -204,14 +203,18 @@ async def list_logs(
     if campaign is None:
         raise NotFoundError(f"Campaign {campaign_id} not found")
     rows = (
-        await db.execute(
-            select(EmailLog)
-            .where(EmailLog.campaign_id == campaign_id)
-            .order_by(EmailLog.created_at)
-            .limit(limit)
-            .offset(offset)
+        (
+            await db.execute(
+                select(EmailLog)
+                .where(EmailLog.campaign_id == campaign_id)
+                .order_by(EmailLog.created_at)
+                .limit(limit)
+                .offset(offset)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     total = campaign.total
     return Page(items=[_log_to_read(r) for r in rows], total=total, limit=limit, offset=offset)
 

@@ -1,4 +1,5 @@
 """html2text fallback."""
+
 from __future__ import annotations
 
 import html2text

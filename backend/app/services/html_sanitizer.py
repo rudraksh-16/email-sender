@@ -1,13 +1,34 @@
 """bleach allowlist applied AFTER Jinja render."""
+
 from __future__ import annotations
 
 import bleach
 
 _ALLOWED_TAGS: frozenset[str] = frozenset(
     {
-        "a", "b", "blockquote", "br", "code", "div", "em", "h1", "h2", "h3",
-        "h4", "hr", "i", "img", "li", "ol", "p", "pre", "s", "span", "strong",
-        "u", "ul",
+        "a",
+        "b",
+        "blockquote",
+        "br",
+        "code",
+        "div",
+        "em",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "hr",
+        "i",
+        "img",
+        "li",
+        "ol",
+        "p",
+        "pre",
+        "s",
+        "span",
+        "strong",
+        "u",
+        "ul",
     }
 )
 _ALLOWED_ATTRS: dict[str, list[str]] = {

@@ -8,8 +8,15 @@ from app.models.base import Base, TimestampMixin, uuid_str
 contact_group_members = Table(
     "contact_group_members",
     Base.metadata,
-    Column("contact_id", String(36), ForeignKey("contacts.id", ondelete="CASCADE"), primary_key=True),
-    Column("group_id", String(36), ForeignKey("contact_groups.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "contact_id", String(36), ForeignKey("contacts.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column(
+        "group_id",
+        String(36),
+        ForeignKey("contact_groups.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
 )
 
 

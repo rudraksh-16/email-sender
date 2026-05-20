@@ -1,4 +1,5 @@
 """On-disk attachment storage under user_data_dir/attachments."""
+
 from __future__ import annotations
 
 import os
@@ -20,9 +21,7 @@ def _check_size_and_mime(size_bytes: int, mime_type: str) -> None:
     settings = get_settings()
     max_bytes = settings.MAX_ATTACHMENT_MB * 1024 * 1024
     if size_bytes > max_bytes:
-        raise ValidationError(
-            f"Attachment too large ({size_bytes} bytes > {max_bytes})"
-        )
+        raise ValidationError(f"Attachment too large ({size_bytes} bytes > {max_bytes})")
     if mime_type not in settings.ALLOWED_ATTACHMENT_MIMES:
         raise ValidationError(f"Disallowed MIME type: {mime_type}")
 

@@ -1,4 +1,5 @@
 """SMTP account CRUD + connection test."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status

@@ -4,6 +4,7 @@ Each resource has its own module so feature work touches one file. The
 aggregator below wires them with stable URL prefixes + tags; adding a new
 resource means a new module + one line here.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter

@@ -1,4 +1,5 @@
 """Attachment upload + retrieval."""
+
 from __future__ import annotations
 
 import mimetypes
@@ -23,11 +24,15 @@ async def upload_attachment(
     db: AsyncSession = Depends(get_db),
 ) -> AttachmentRead:
     filename = file.filename or "upload.bin"
-    declared_mime = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    declared_mime = (
+        file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    )
     data = await file.read()
     if not data:
         raise ValidationError("Empty upload")
-    stored_name, size = attachment_store.store_bytes(data, filename=filename, mime_type=declared_mime)
+    stored_name, size = attachment_store.store_bytes(
+        data, filename=filename, mime_type=declared_mime
+    )
 
     row = Attachment(
         filename=filename,

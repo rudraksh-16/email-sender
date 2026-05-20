@@ -4,6 +4,7 @@ Routers / services raise `AppError` subclasses; the registered handler maps
 them to a stable JSON envelope: ``{"error": {"code": ..., "message": ...}}``.
 Adding a new error type means adding a subclass — no per-route try/except.
 """
+
 from __future__ import annotations
 
 from fastapi import FastAPI
