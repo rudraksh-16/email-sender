@@ -9,6 +9,60 @@ import { Select } from "@/components/ui/Select";
 import { RichTextEditor } from "@/components/editor/RichTextEditor";
 import { Modal } from "@/components/ui/Modal";
 
+function extractPlaceholders(subject: string, bodyHtml: string): string[] {
+  const matches = [...subject.matchAll(/{{(\w+)}}/g), ...bodyHtml.matchAll(/{{(\w+)}}/g)];
+  return [...new Set(matches.map((m) => m[1]))];
+}
+
+function PreviewModalBody({
+  subject, bodyHtml, fields, onFieldChange, onRender, isPending, isError, error, result,
+}: {
+  subject: string;
+  bodyHtml: string;
+  fields: Record<string, string>;
+  onFieldChange: (key: string, value: string) => void;
+  onRender: () => void;
+  isPending: boolean;
+  isError: boolean;
+  error?: string;
+  result: { subject: string; body_html: string } | null;
+}) {
+  const placeholders = extractPlaceholders(subject, bodyHtml);
+  return (
+    <div className="space-y-4">
+      {placeholders.length > 0 ? (
+        <div className="grid grid-cols-2 gap-3">
+          {placeholders.map((key) => (
+            <div key={key}>
+              <label className="text-xs font-medium text-gray-500 block mb-1">{`{{${key}}}`}</label>
+              <input
+                type="text"
+                value={fields[key] ?? ""}
+                onChange={(e) => onFieldChange(key, e.target.value)}
+                placeholder={key}
+                className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-gray-500">No <code>{"{{placeholders}}"}</code> found in subject or body.</p>
+      )}
+      <Button size="sm" loading={isPending} onClick={onRender}>Render</Button>
+      {isError && <p className="text-xs text-red-600">{error}</p>}
+      {result && (
+        <div className="mt-1 space-y-2">
+          <p className="text-sm font-medium text-gray-700">Subject: <span className="font-normal">{result.subject}</span></p>
+          <div
+            className="border border-gray-200 rounded p-3 prose prose-sm max-w-none text-sm"
+            dangerouslySetInnerHTML={{ __html: result.body_html }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TemplateEditPage() {
   const { id } = useParams<{ id: string }>();
   const isNew = !id;
@@ -27,7 +81,7 @@ export function TemplateEditPage() {
   const [bodyHtml, setBodyHtml] = useState("");
   const [accountId, setAccountId] = useState("");
   const [previewModal, setPreviewModal] = useState(false);
-  const [previewData, setPreviewData] = useState("{}");
+  const [previewFields, setPreviewFields] = useState<Record<string, string>>({});
   const [previewResult, setPreviewResult] = useState<{ subject: string; body_html: string } | null>(null);
 
   useEffect(() => {
@@ -96,38 +150,18 @@ export function TemplateEditPage() {
         </div>
       </form>
 
-      <Modal open={previewModal} onClose={() => setPreviewModal(false)} title="Preview template" className="max-w-2xl">
-        <div className="space-y-3">
-          <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">Sample data (JSON)</label>
-            <textarea
-              value={previewData}
-              onChange={(e) => setPreviewData(e.target.value)}
-              className="w-full border border-gray-300 rounded-md p-2 text-xs font-mono"
-              rows={4}
-            />
-          </div>
-          <Button
-            size="sm"
-            loading={preview.isPending}
-            onClick={() => {
-              try { preview.mutate(JSON.parse(previewData)); }
-              catch { alert("Invalid JSON"); }
-            }}
-          >
-            Render
-          </Button>
-          {preview.isError && <p className="text-xs text-red-600">{String(preview.error)}</p>}
-          {previewResult && (
-            <div className="mt-3 space-y-2">
-              <p className="text-sm font-medium text-gray-700">Subject: <span className="font-normal">{previewResult.subject}</span></p>
-              <div
-                className="border border-gray-200 rounded p-3 prose prose-sm max-w-none text-sm"
-                dangerouslySetInnerHTML={{ __html: previewResult.body_html }}
-              />
-            </div>
-          )}
-        </div>
+      <Modal open={previewModal} onClose={() => { setPreviewModal(false); setPreviewResult(null); }} title="Preview template" className="max-w-2xl">
+        <PreviewModalBody
+          subject={subject}
+          bodyHtml={bodyHtml}
+          fields={previewFields}
+          onFieldChange={(k, v) => setPreviewFields((prev) => ({ ...prev, [k]: v }))}
+          onRender={() => preview.mutate(previewFields)}
+          isPending={preview.isPending}
+          isError={preview.isError}
+          error={preview.isError ? String(preview.error) : undefined}
+          result={previewResult}
+        />
       </Modal>
     </div>
   );

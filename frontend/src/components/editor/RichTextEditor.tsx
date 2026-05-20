@@ -1,4 +1,5 @@
 import { useEditor, EditorContent } from "@tiptap/react";
+import { useEffect, useRef } from "react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
@@ -56,6 +57,9 @@ function ToolbarBtn({
 }
 
 export function RichTextEditor({ value, onChange, placeholder, className }: RichTextEditorProps) {
+  const synced = useRef(false);
+  const syncing = useRef(false);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -66,9 +70,18 @@ export function RichTextEditor({ value, onChange, placeholder, className }: Rich
     ],
     content: value ?? "",
     onUpdate({ editor }) {
-      onChange?.(editor.getHTML());
+      if (!syncing.current) onChange?.(editor.getHTML());
     },
   });
+
+  useEffect(() => {
+    if (editor && value && !synced.current && editor.getHTML() !== value) {
+      syncing.current = true;
+      editor.commands.setContent(value);
+      syncing.current = false;
+      synced.current = true;
+    }
+  }, [editor, value]);
 
   if (!editor) return null;
 
