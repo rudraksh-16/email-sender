@@ -1,7 +1,7 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Upload, Eye } from "lucide-react";
+import { Eye } from "lucide-react";
 import Papa from "papaparse";
 import { smtpApi } from "@/api/smtp";
 import { templatesApi } from "@/api/templates";
@@ -15,6 +15,8 @@ import { Modal } from "@/components/ui/Modal";
 
 type Row = Record<string, string>;
 
+const DEFAULT_CSV = "email,first_name,last_name\n";
+
 export function BulkSendPage() {
   const navigate = useNavigate();
   const { data: accounts } = useQuery({ queryKey: ["smtp-accounts"], queryFn: smtpApi.list });
@@ -25,11 +27,11 @@ export function BulkSendPage() {
   const [bodyHtml, setBodyHtml] = useState("");
   const [accountId, setAccountId] = useState("");
   const [templateId, setTemplateId] = useState("");
+  const [useTemplate, setUseTemplate] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
-  const [csvFileName, setCsvFileName] = useState("");
+  const [csvText, setCsvText] = useState(DEFAULT_CSV);
   const [attachmentIds, setAttachmentIds] = useState<string[]>([]);
   const [previewModal, setPreviewModal] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const loadTemplate = (id: string) => {
     const t = templates?.find((t) => t.id === id);
@@ -40,13 +42,19 @@ export function BulkSendPage() {
     setTemplateId(id);
   };
 
-  const handleCsv = (file: File) => {
-    setCsvFileName(file.name);
-    Papa.parse<Row>(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (result) => setRows(result.data),
-    });
+  const handleToggleTemplate = (checked: boolean) => {
+    setUseTemplate(checked);
+    if (!checked) {
+      setTemplateId("");
+      setSubject("");
+      setBodyHtml("");
+    }
+  };
+
+  const handleCsvChange = (text: string) => {
+    setCsvText(text);
+    const result = Papa.parse<Row>(text.trim(), { header: true, skipEmptyLines: true });
+    setRows(result.data.filter((r) => r.email));
   };
 
   const create = useMutation({
@@ -68,6 +76,7 @@ export function BulkSendPage() {
 
   const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
   const previewRow = rows[0] ?? {};
+  const canSubmit = rows.length > 0 && (!useTemplate || !!templateId);
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -83,59 +92,87 @@ export function BulkSendPage() {
             <option value="">Select account…</option>
             {accounts?.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </Select>
-          <Select
-            label="Template (optional)"
-            value={templateId}
-            onChange={(e) => loadTemplate(e.target.value)}
-          >
-            <option value="">None — compose below</option>
-            {templates?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </Select>
-        </div>
 
-        <Input
-          label="Subject (use {{column}} for merge fields)"
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          required
-        />
-
-        <div>
-          <label className="text-sm font-medium text-gray-700 block mb-1">Body</label>
-          <RichTextEditor value={bodyHtml} onChange={setBodyHtml} placeholder="Use {{first_name}} etc. for merge fields…" />
-        </div>
-
-        <div>
-          <label className="text-sm font-medium text-gray-700 block mb-1">
-            Recipients CSV
-            {csvFileName && <span className="ml-2 text-xs text-gray-500">({csvFileName}, {rows.length} rows)</span>}
-          </label>
-          <div className="flex items-center gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => fileRef.current?.click()}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-gray-700">Template</label>
+              <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={useTemplate}
+                  onChange={(e) => handleToggleTemplate(e.target.checked)}
+                  className="rounded"
+                />
+                Use template
+              </label>
+            </div>
+            <Select
+              value={templateId}
+              onChange={(e) => loadTemplate(e.target.value)}
+              disabled={!useTemplate}
             >
-              <Upload size={16} /> Upload CSV
-            </Button>
+              <option value="">Select template…</option>
+              {templates?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </Select>
+          </div>
+        </div>
+
+        {useTemplate && subject && (
+          <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-sm text-gray-700">
+            <span className="font-medium text-gray-500 text-xs uppercase tracking-wide mr-2">Subject</span>
+            {subject}
+          </div>
+        )}
+
+        {useTemplate && !templateId && (
+          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+            Select a template above — subject and body will be loaded from it.
+          </p>
+        )}
+
+        {!useTemplate && (
+          <>
+            <Input
+              label="Subject (use {{column}} for merge fields)"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              required
+            />
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">Body</label>
+              <RichTextEditor value={bodyHtml} onChange={setBodyHtml} placeholder="Use {{first_name}} etc. for merge fields…" />
+            </div>
+          </>
+        )}
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-sm font-medium text-gray-700">
+              Recipients
+              {rows.length > 0 && (
+                <span className="ml-2 text-xs font-normal text-gray-500">
+                  {rows.length} row{rows.length !== 1 ? "s" : ""} · columns: {columns.join(", ")}
+                </span>
+              )}
+            </label>
             {rows.length > 0 && (
               <Button type="button" variant="ghost" size="sm" onClick={() => setPreviewModal(true)}>
                 <Eye size={16} /> Preview row 1
               </Button>
             )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCsv(f); }}
-            />
           </div>
-          {rows.length > 0 && (
-            <p className="text-xs text-gray-500 mt-1">
-              Columns: {columns.join(", ")}
-            </p>
-          )}
+          <textarea
+            value={csvText}
+            onChange={(e) => handleCsvChange(e.target.value)}
+            spellCheck={false}
+            rows={8}
+            className="w-full font-mono text-sm border border-gray-200 rounded-lg p-3 resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-300"
+            placeholder={DEFAULT_CSV}
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            Paste CSV rows below the header. <code className="bg-gray-100 px-1 rounded">email</code> column required.
+            Add any extra columns to use as merge fields (e.g. <code className="bg-gray-100 px-1 rounded">{"{{first_name}}"}</code>).
+          </p>
         </div>
 
         <div>
@@ -146,8 +183,8 @@ export function BulkSendPage() {
         {create.isError && <p className="text-sm text-red-600">{String(create.error)}</p>}
 
         <div className="flex justify-end">
-          <Button type="submit" loading={create.isPending} disabled={!rows.length}>
-            Send to {rows.length} recipients
+          <Button type="submit" loading={create.isPending} disabled={!canSubmit}>
+            {rows.length > 0 ? `Send to ${rows.length} recipient${rows.length !== 1 ? "s" : ""}` : "Send"}
           </Button>
         </div>
       </form>
