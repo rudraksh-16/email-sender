@@ -1,9 +1,4 @@
-"""FastAPI application factory and static-frontend mount.
-
-This module wires together the layers — config, logging, routers, exception
-handlers, static SPA — into a single FastAPI instance. Process lifecycle
-(uvicorn, pywebview) lives in `server.py` / `desktop.py` / `__main__.py`.
-"""
+"""FastAPI application factory + static-frontend mount."""
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -14,10 +9,11 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.core.migrations import upgrade_to_head
+from app.db import dispose_engine
 from app.paths import ensure_user_dirs, resource_dir
 from app.routers import api_router
 from app.utils.errors import register_exception_handlers
-
 
 _PLACEHOLDER_HTML = """<!doctype html>
 <html lang="en">
@@ -32,7 +28,7 @@ _PLACEHOLDER_HTML = """<!doctype html>
   </head>
   <body>
     <h1>Email App</h1>
-    <p>Backend running. Frontend not built yet.</p>
+    <p>Backend running. Frontend not built yet — run <code>npm run build</code> in <code>frontend/</code>.</p>
     <p>Health: <a href="/api/health">/api/health</a></p>
   </body>
 </html>
@@ -43,7 +39,11 @@ _PLACEHOLDER_HTML = """<!doctype html>
 async def lifespan(app: FastAPI):
     configure_logging()
     ensure_user_dirs()
-    yield
+    upgrade_to_head()
+    try:
+        yield
+    finally:
+        await dispose_engine()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

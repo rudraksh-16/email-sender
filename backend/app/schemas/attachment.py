@@ -1,5 +1,12 @@
-"""Attachment DTOs.
+from __future__ import annotations
 
-Planned: AttachmentRead (filename, mime_type, size_bytes, id),
-AttachmentUploadResult.
-"""
+from app.schemas.common import TimestampedDTO
+
+
+class AttachmentRead(TimestampedDTO):
+    id: str
+    filename: str
+    mime_type: str
+    size_bytes: int
+    campaign_id: str | None = None
+    template_id: str | None = None

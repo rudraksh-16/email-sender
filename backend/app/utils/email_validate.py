@@ -1,6 +1,14 @@
-"""Thin wrapper around `email-validator`.
+"""Thin wrapper around email-validator."""
+from __future__ import annotations
 
-Activated with the send/contacts slice. Returns the normalised address and
-raises ``ValidationError`` on malformed input. ``check_deliverability=False``
-is used since the user is sending, not registering.
-"""
+from email_validator import EmailNotValidError, validate_email
+
+from app.utils.errors import ValidationError
+
+
+def normalise_email(address: str) -> str:
+    try:
+        info = validate_email(address, check_deliverability=False)
+    except EmailNotValidError as exc:
+        raise ValidationError(f"Invalid email: {address}") from exc
+    return info.normalized

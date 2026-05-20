@@ -1,9 +1,19 @@
-"""Jinja2 sandboxed renderer for subject + body.
+"""Jinja2 sandboxed renderer."""
+from __future__ import annotations
 
-Uses ``SandboxedEnvironment`` with ``StrictUndefined`` so template authors
-get loud errors on typos rather than silent empty strings. Custom filters
-(date, default_if_blank, etc.) registered here.
+from collections.abc import Mapping
+from typing import Any
 
-Planned API:
-    def render(template: str, data: Mapping[str, Any]) -> str
-"""
+from jinja2 import StrictUndefined
+from jinja2.sandbox import SandboxedEnvironment
+
+from app.utils.errors import ValidationError
+
+_env = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
+
+
+def render(template_str: str, data: Mapping[str, Any]) -> str:
+    try:
+        return _env.from_string(template_str).render(**data)
+    except Exception as exc:  # noqa: BLE001 — surface any render error as a 422
+        raise ValidationError(f"Template render error: {exc}") from exc

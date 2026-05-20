@@ -1,9 +1,12 @@
-"""html2text fallback so every multipart/alternative carries a text/plain part.
+"""html2text fallback."""
+from __future__ import annotations
 
-Plain-text clients (mutt, some Apple Watch previews, spam filters scoring
-for text part presence) read this. Stripping links/images and re-flowing
-paragraphs is good enough.
+import html2text
 
-Planned API:
-    def to_text(html: str) -> str
-"""
+
+def to_text(html: str) -> str:
+    h = html2text.HTML2Text()
+    h.body_width = 0  # don't hard-wrap
+    h.ignore_images = False
+    h.ignore_links = False
+    return h.handle(html).strip()
