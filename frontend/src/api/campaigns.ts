@@ -12,6 +12,8 @@ export const campaignsApi = {
       })
       .then((r) => r.data),
   cancel: (id: string) => api.post<Campaign>(`/campaigns/${id}/cancel`).then((r) => r.data),
+  retryFailed: (id: string) =>
+    api.post<Campaign>(`/campaigns/${id}/retry-failed`).then((r) => r.data),
   logs: (id: string, params?: { limit?: number; offset?: number }) =>
     api.get<Page<EmailLog>>(`/campaigns/${id}/logs`, { params }).then((r) => r.data),
   retryLog: (logId: string) =>

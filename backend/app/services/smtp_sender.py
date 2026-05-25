@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
 
 import aiosmtplib
+import certifi
 
 from app.models.smtp_account import SmtpAccount
 from app.services.crypto import decrypt
@@ -68,6 +70,11 @@ def build_message(account: SmtpAccount, req: SendRequest) -> EmailMessage:
     return msg
 
 
+def _ssl_context() -> ssl.SSLContext:
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    return ctx
+
+
 async def send(account: SmtpAccount, req: SendRequest) -> SendResult:
     msg = build_message(account, req)
     password = decrypt(account.password_encrypted) or None
@@ -80,6 +87,7 @@ async def send(account: SmtpAccount, req: SendRequest) -> SendResult:
             password=password,
             use_tls=account.use_ssl,
             start_tls=account.use_tls and not account.use_ssl,
+            tls_context=_ssl_context(),
             timeout=30,
         )
     except (aiosmtplib.SMTPException, OSError) as exc:
@@ -100,6 +108,7 @@ async def test_connection(account: SmtpAccount) -> None:
         port=account.port,
         use_tls=account.use_ssl,
         start_tls=False,
+        tls_context=_ssl_context(),
         timeout=15,
     )
     try:

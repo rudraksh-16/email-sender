@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { campaignsApi } from "@/api/campaigns";
+import type { Page, EmailLog } from "@/api/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -10,31 +11,52 @@ export function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
 
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["campaign-logs", id] });
+    qc.invalidateQueries({ queryKey: ["campaigns", id] });
+  };
+
+  const retry = useMutation({
+    mutationFn: (logId: string) => campaignsApi.retryLog(logId),
+    onSuccess: invalidate,
+  });
+
+  const retryAll = useMutation({
+    mutationFn: () => campaignsApi.retryFailed(id!),
+    onSuccess: invalidate,
+  });
+
+  const busy = retry.isPending || retryAll.isPending;
+
   const { data: campaign, isLoading } = useQuery({
     queryKey: ["campaigns", id],
     queryFn: () => campaignsApi.get(id!),
-    refetchInterval: (q) => (q.state.data?.status === "running" ? 1500 : false),
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      if (s === "running" || s === "queued") return 1500;
+      if (busy) return 1000;
+      const logsCache = qc.getQueryData<Page<EmailLog>>(["campaign-logs", id]);
+      if (logsCache?.items.some((l) => l.status === "retrying")) return 1000;
+      return false;
+    },
     enabled: !!id,
   });
 
   const { data: logs } = useQuery({
     queryKey: ["campaign-logs", id],
     queryFn: () => campaignsApi.logs(id!, { limit: 200 }),
-    refetchInterval: campaign?.status === "running" ? 2000 : false,
+    refetchInterval: (q) => {
+      if (campaign?.status === "running" || campaign?.status === "queued") return 2000;
+      if (busy) return 1000;
+      if (q.state.data?.items.some((l) => l.status === "retrying")) return 1000;
+      return false;
+    },
     enabled: !!id,
   });
 
   const cancel = useMutation({
     mutationFn: () => campaignsApi.cancel(id!),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns", id] }),
-  });
-
-  const retry = useMutation({
-    mutationFn: (logId: string) => campaignsApi.retryLog(logId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["campaign-logs", id] });
-      qc.invalidateQueries({ queryKey: ["campaigns", id] });
-    },
   });
 
   if (isLoading || !campaign) {
@@ -52,6 +74,16 @@ export function CampaignDetailPage() {
         </div>
         <div className="flex items-center gap-3">
           <Badge label={campaign.status} variant={campaign.status} />
+          {!["queued", "running"].includes(campaign.status) && campaign.failed_count > 0 && (
+            <Button
+              variant="primary"
+              size="sm"
+              loading={retryAll.isPending}
+              onClick={() => retryAll.mutate()}
+            >
+              Retry failed ({campaign.failed_count})
+            </Button>
+          )}
           {["queued", "running"].includes(campaign.status) && (
             <Button variant="danger" size="sm" loading={cancel.isPending} onClick={() => cancel.mutate()}>
               Cancel

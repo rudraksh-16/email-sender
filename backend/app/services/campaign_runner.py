@@ -224,14 +224,23 @@ async def retry_log(log_id: str) -> bool:
         if account is None:
             return False
         attachments = await _load_attachments(campaign.id)
-        was_failed = log.status == EmailLogStatus.failed
+        if log.status != EmailLogStatus.failed:
+            return False
         log.status = EmailLogStatus.retrying
         await session.commit()
         ok = await _process_row(session, campaign, account, log, attachments)
-        if was_failed and ok:
-            campaign.failed_count = max(0, campaign.failed_count - 1)
-            campaign.sent_count += 1
+        if ok:
+            await session.execute(
+                sql_update(Campaign)
+                .where(Campaign.id == campaign.id)
+                .values(
+                    failed_count=Campaign.failed_count - 1,
+                    sent_count=Campaign.sent_count + 1,
+                )
+            )
+            await session.commit()
+            await session.refresh(campaign)
             if campaign.status == CampaignStatus.failed and campaign.failed_count == 0:
                 campaign.status = CampaignStatus.done
-            await session.commit()
+                await session.commit()
         return ok
