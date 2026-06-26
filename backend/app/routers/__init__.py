@@ -19,6 +19,7 @@ from app.routers import (
     smtp_accounts,
     system,
     templates,
+    verify,
 )
 
 api_router = APIRouter()
@@ -31,3 +32,4 @@ api_router.include_router(templates.router, prefix="/templates", tags=["template
 api_router.include_router(campaigns.router, prefix="/campaigns", tags=["campaigns"])
 api_router.include_router(send.router, prefix="/send", tags=["send"])
 api_router.include_router(attachments.router, prefix="/attachments", tags=["attachments"])
+api_router.include_router(verify.router, prefix="/verify", tags=["verify"])

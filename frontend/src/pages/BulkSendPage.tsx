@@ -6,6 +6,7 @@ import Papa from "papaparse";
 import { smtpApi } from "@/api/smtp";
 import { templatesApi } from "@/api/templates";
 import { campaignsApi } from "@/api/campaigns";
+import { verifyApi, type VerifyReport } from "@/api/verify";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -32,6 +33,27 @@ export function BulkSendPage() {
   const [csvText, setCsvText] = useState(DEFAULT_CSV);
   const [attachmentIds, setAttachmentIds] = useState<string[]>([]);
   const [previewModal, setPreviewModal] = useState(false);
+  const [report, setReport] = useState<VerifyReport | null>(null);
+  const [excluded, setExcluded] = useState<Set<number>>(new Set());
+
+  const verify = useMutation({
+    mutationFn: () => verifyApi.csv(csvText),
+    onSuccess: (r) => {
+      setReport(r);
+      // Drop bad rows by default; user can re-include below.
+      setExcluded(
+        new Set(r.rows.filter((row) => row.verdict !== "valid").map((row) => row.index)),
+      );
+    },
+  });
+
+  const toggleExcluded = (index: number) =>
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
 
   const loadTemplate = (id: string) => {
     const t = templates?.find((t) => t.id === id);
@@ -55,7 +77,12 @@ export function BulkSendPage() {
     setCsvText(text);
     const result = Papa.parse<Row>(text.trim(), { header: true, skipEmptyLines: true });
     setRows(result.data.filter((r) => r.email));
+    // List changed — stale verification no longer applies.
+    setReport(null);
+    setExcluded(new Set());
   };
+
+  const keptRows = rows.filter((_, i) => !excluded.has(i));
 
   const create = useMutation({
     mutationFn: () =>
@@ -65,7 +92,7 @@ export function BulkSendPage() {
         body_html: bodyHtml,
         smtp_account_id: accountId,
         template_id: templateId || undefined,
-        recipients: rows.map((r) => ({
+        recipients: keptRows.map((r) => ({
           email: r.email,
           data: Object.fromEntries(Object.entries(r).filter(([k]) => k !== "email")),
         })),
@@ -76,7 +103,7 @@ export function BulkSendPage() {
 
   const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
   const previewRow = rows[0] ?? {};
-  const canSubmit = rows.length > 0 && (!useTemplate || !!templateId);
+  const canSubmit = keptRows.length > 0 && (!useTemplate || !!templateId);
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -155,11 +182,24 @@ export function BulkSendPage() {
                 </span>
               )}
             </label>
-            {rows.length > 0 && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setPreviewModal(true)}>
-                <Eye size={16} /> Preview row 1
-              </Button>
-            )}
+            <div className="flex items-center gap-1">
+              {rows.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  loading={verify.isPending}
+                  onClick={() => verify.mutate()}
+                >
+                  Verify list
+                </Button>
+              )}
+              {rows.length > 0 && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setPreviewModal(true)}>
+                  <Eye size={16} /> Preview row 1
+                </Button>
+              )}
+            </div>
           </div>
           <textarea
             value={csvText}
@@ -173,6 +213,54 @@ export function BulkSendPage() {
             Paste CSV rows below the header. <code className="bg-gray-100 px-1 rounded">email</code> column required.
             Add any extra columns to use as merge fields (e.g. <code className="bg-gray-100 px-1 rounded">{"{{first_name}}"}</code>).
           </p>
+
+          {verify.isError && (
+            <p className="text-sm text-red-600 mt-2">{String(verify.error)}</p>
+          )}
+
+          {report && (
+            <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden">
+              <div className="flex flex-wrap gap-3 px-3 py-2 bg-gray-50 text-xs border-b border-gray-200">
+                <span className="text-green-700">{report.summary.valid} valid</span>
+                <span className="text-red-700">{report.summary.invalid} invalid</span>
+                <span className="text-amber-700">{report.summary.duplicate} duplicate</span>
+                <span className="ml-auto text-gray-500">{keptRows.length} will be sent</span>
+              </div>
+              <ul className="max-h-56 overflow-y-auto divide-y divide-gray-100 text-sm">
+                {report.rows.map((row) => {
+                  const kept = !excluded.has(row.index);
+                  const color =
+                    row.verdict === "valid"
+                      ? "text-green-700"
+                      : row.verdict === "duplicate"
+                        ? "text-amber-700"
+                        : "text-red-700";
+                  return (
+                    <li key={row.index} className="flex items-center gap-2 px-3 py-1.5">
+                      <input
+                        type="checkbox"
+                        checked={kept}
+                        onChange={() => toggleExcluded(row.index)}
+                        className="rounded"
+                      />
+                      <span className="font-mono text-gray-800 truncate flex-1">{row.email}</span>
+                      <span className={`text-xs ${color}`}>{row.verdict}</span>
+                      {row.reason && (
+                        <span className="text-xs text-gray-400 truncate max-w-[40%]" title={row.reason}>
+                          {row.reason}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          <p className="text-xs text-gray-400 mt-2">
+            Verification checks syntax + domain (MX). It can&rsquo;t guarantee a Gmail/Outlook mailbox
+            exists — those still need a test send — but it removes typos and dead domains.
+          </p>
         </div>
 
         <div>
@@ -184,7 +272,7 @@ export function BulkSendPage() {
 
         <div className="flex justify-end">
           <Button type="submit" loading={create.isPending} disabled={!canSubmit}>
-            {rows.length > 0 ? `Send to ${rows.length} recipient${rows.length !== 1 ? "s" : ""}` : "Send"}
+            {keptRows.length > 0 ? `Send to ${keptRows.length} recipient${keptRows.length !== 1 ? "s" : ""}` : "Send"}
           </Button>
         </div>
       </form>

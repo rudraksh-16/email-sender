@@ -11,9 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db
 from app.models import Attachment, Campaign, CampaignStatus, EmailLog, EmailLogStatus, SmtpAccount
-from app.schemas.campaign import CampaignCreate, CampaignRead, EmailLogRead
+from app.schemas.campaign import (
+    CampaignCreate,
+    CampaignDuplicateRequest,
+    CampaignRead,
+    EmailLogRead,
+)
 from app.schemas.common import Page
-from app.services import campaign_runner, csv_parser
+from app.services import attachment_store, campaign_runner, csv_parser
 from app.utils.errors import NotFoundError, ValidationError
 
 router = APIRouter()
@@ -100,6 +105,40 @@ async def _link_attachments(db: AsyncSession, campaign_id: str, ids: list[str]) 
     await db.execute(
         update(Attachment).where(Attachment.id.in_(ids)).values(campaign_id=campaign_id)
     )
+
+
+async def _clone_attachments(db: AsyncSession, src_campaign_id: str, dst_campaign_id: str) -> None:
+    """Copy each attachment of the source campaign to the new one.
+
+    Blobs are re-stored under a fresh name so the clone is independent — deleting
+    either campaign won't pull the file out from under the other.
+    """
+    rows = (
+        (
+            await db.execute(
+                select(Attachment).where(Attachment.campaign_id == src_campaign_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for a in rows:
+        data = attachment_store.read_bytes(a.stored_name)
+        stored_name, size = attachment_store.store_bytes(
+            data, filename=a.filename, mime_type=a.mime_type
+        )
+        db.add(
+            Attachment(
+                filename=a.filename,
+                stored_name=stored_name,
+                mime_type=a.mime_type,
+                size_bytes=size,
+                campaign_id=dst_campaign_id,
+                template_id=a.template_id,
+            )
+        )
+    if rows:
+        await db.commit()
 
 
 async def _persist_campaign_with_rows(
@@ -222,6 +261,53 @@ async def create_campaign_from_csv(
     return _campaign_to_read(campaign)
 
 
+@router.post(
+    "/{campaign_id}/duplicate",
+    response_model=CampaignRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def duplicate_campaign(
+    campaign_id: str,
+    payload: CampaignDuplicateRequest,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> CampaignRead:
+    """Clone a campaign (subject/body/recipients/attachments) and queue it fresh.
+
+    The source campaign and its logs are left untouched.
+    """
+    source = await db.get(Campaign, campaign_id)
+    if source is None:
+        raise NotFoundError(f"Campaign {campaign_id} not found")
+
+    stmt = select(EmailLog).where(EmailLog.campaign_id == campaign_id)
+    if payload.recipients == "sent":
+        stmt = stmt.where(EmailLog.status == EmailLogStatus.sent)
+    elif payload.recipients == "failed":
+        stmt = stmt.where(EmailLog.status == EmailLogStatus.failed)
+    logs = (await db.execute(stmt)).scalars().all()
+
+    rows: list[dict[str, Any]] = []
+    for log in logs:
+        merge = json.loads(log.merge_data) if log.merge_data else {}
+        rows.append({"email": log.to_email, **merge})
+
+    new_campaign = await _persist_campaign_with_rows(
+        db,
+        name=payload.name or f"{source.name} (resend)",
+        subject=source.subject,
+        body_html=source.body_html,
+        smtp_account_id=source.smtp_account_id,
+        template_id=source.template_id,
+        rows=rows,
+        attachment_ids=[],
+    )
+    await _clone_attachments(db, source.id, new_campaign.id)
+
+    background.add_task(campaign_runner.run_campaign, new_campaign.id)
+    return _campaign_to_read(new_campaign)
+
+
 @router.get("/{campaign_id}", response_model=CampaignRead)
 async def read_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)) -> CampaignRead:
     row = await db.get(Campaign, campaign_id)
@@ -235,6 +321,32 @@ async def read_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)) ->
         failed_count=failed,
         status=_derive_status(row, sent, failed),
     )
+
+
+@router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)) -> None:
+    """Delete a campaign, its logs, and its attachment blobs.
+
+    Refuses while the campaign is still queued/running — cancel it first so the
+    background sender isn't yanked mid-send.
+    """
+    campaign = await db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise NotFoundError(f"Campaign {campaign_id} not found")
+    if campaign.status in (CampaignStatus.queued, CampaignStatus.running):
+        raise ValidationError("Cancel the campaign before deleting it")
+
+    attachments = (
+        (await db.execute(select(Attachment).where(Attachment.campaign_id == campaign_id)))
+        .scalars()
+        .all()
+    )
+    for a in attachments:
+        attachment_store.delete(a.stored_name)
+
+    # email_logs + attachment rows cascade via FK ON DELETE CASCADE.
+    await db.delete(campaign)
+    await db.commit()
 
 
 @router.post("/{campaign_id}/cancel", response_model=CampaignRead)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -50,6 +50,17 @@ class EmailLogRead(TimestampedDTO):
     error_message: str | None
     attempts: int
     sent_at: datetime | None
+
+
+class CampaignDuplicateRequest(BaseModel):
+    """Clone an existing campaign into a fresh one and queue it.
+
+    `recipients` scopes which of the source campaign's recipients carry over:
+    all of them, only those that sent successfully, or only those that failed.
+    """
+
+    name: str | None = Field(default=None, max_length=255)
+    recipients: Literal["all", "sent", "failed"] = "all"
 
 
 class CampaignFromCsvRequest(BaseModel):

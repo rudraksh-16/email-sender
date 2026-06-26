@@ -1,15 +1,24 @@
-import { useParams } from "react-router-dom";
+import { useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { campaignsApi } from "@/api/campaigns";
 import type { Page, EmailLog } from "@/api/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { Select } from "@/components/ui/Select";
+import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { fmtDate } from "@/lib/utils";
 
 export function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
+
+  const [resendOpen, setResendOpen] = useState(false);
+  const [resendScope, setResendScope] = useState<"all" | "sent" | "failed">("all");
+  const [resendName, setResendName] = useState("");
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["campaign-logs", id] });
@@ -59,6 +68,29 @@ export function CampaignDetailPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns", id] }),
   });
 
+  const resend = useMutation({
+    mutationFn: () =>
+      campaignsApi.duplicate(id!, {
+        recipients: resendScope,
+        name: resendName.trim() || undefined,
+      }),
+    onSuccess: (created) => {
+      setResendOpen(false);
+      setResendName("");
+      setResendScope("all");
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      navigate(`/campaigns/${created.id}`);
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: () => campaignsApi.delete(id!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      navigate("/");
+    },
+  });
+
   if (isLoading || !campaign) {
     return <div className="flex justify-center py-16"><Spinner /></div>;
   }
@@ -74,6 +106,11 @@ export function CampaignDetailPage() {
         </div>
         <div className="flex items-center gap-3">
           <Badge label={campaign.status} variant={campaign.status} />
+          {!["queued", "running"].includes(campaign.status) && (
+            <Button variant="secondary" size="sm" onClick={() => setResendOpen(true)}>
+              Send again
+            </Button>
+          )}
           {!["queued", "running"].includes(campaign.status) && campaign.failed_count > 0 && (
             <Button
               variant="primary"
@@ -87,6 +124,20 @@ export function CampaignDetailPage() {
           {["queued", "running"].includes(campaign.status) && (
             <Button variant="danger" size="sm" loading={cancel.isPending} onClick={() => cancel.mutate()}>
               Cancel
+            </Button>
+          )}
+          {!["queued", "running"].includes(campaign.status) && (
+            <Button
+              variant="danger"
+              size="sm"
+              loading={remove.isPending}
+              onClick={() => {
+                if (confirm(`Delete campaign "${campaign.name}"? This can't be undone.`)) {
+                  remove.mutate();
+                }
+              }}
+            >
+              Delete
             </Button>
           )}
         </div>
@@ -146,6 +197,48 @@ export function CampaignDetailPage() {
           </tbody>
         </table>
       </div>
+
+      <Modal open={resendOpen} onClose={() => setResendOpen(false)} title="Send campaign again">
+        <p className="text-sm text-gray-500 mb-4">
+          Creates a new campaign with the same subject, body, and attachments, then queues it. The
+          current campaign stays as-is.
+        </p>
+        <div className="flex flex-col gap-4">
+          <Select
+            label="Recipients"
+            value={resendScope}
+            onChange={(e) => setResendScope(e.target.value as "all" | "sent" | "failed")}
+          >
+            <option value="all">All recipients ({campaign.total})</option>
+            <option value="sent">Only successfully sent ({campaign.sent_count})</option>
+            <option value="failed">Only failed ({campaign.failed_count})</option>
+          </Select>
+          <Input
+            label="New campaign name (optional)"
+            placeholder={`${campaign.name} (resend)`}
+            value={resendName}
+            onChange={(e) => setResendName(e.target.value)}
+          />
+          {resend.isError && (
+            <p className="text-xs text-red-600">
+              Couldn't resend — the selected scope may have no recipients.
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setResendOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={resend.isPending}
+              onClick={() => resend.mutate()}
+            >
+              Create & send
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

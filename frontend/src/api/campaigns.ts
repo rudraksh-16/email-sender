@@ -12,6 +12,9 @@ export const campaignsApi = {
       })
       .then((r) => r.data),
   cancel: (id: string) => api.post<Campaign>(`/campaigns/${id}/cancel`).then((r) => r.data),
+  duplicate: (id: string, body: { recipients: "all" | "sent" | "failed"; name?: string }) =>
+    api.post<Campaign>(`/campaigns/${id}/duplicate`, body).then((r) => r.data),
+  delete: (id: string) => api.delete(`/campaigns/${id}`),
   retryFailed: (id: string) =>
     api.post<Campaign>(`/campaigns/${id}/retry-failed`).then((r) => r.data),
   logs: (id: string, params?: { limit?: number; offset?: number }) =>

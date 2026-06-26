@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     MAX_ATTACHMENT_MB: int = 25
     CSV_ROW_CAP: int = 50_000
 
+    # Pre-flight verification
+    VERIFY_CHECK_MX: bool = True  # DNS MX lookup per domain; disable for offline/tests
+
     # Allowed attachment MIME types (declared by client; extension-checked too).
     ALLOWED_ATTACHMENT_MIMES: tuple[str, ...] = (
         "application/pdf",
