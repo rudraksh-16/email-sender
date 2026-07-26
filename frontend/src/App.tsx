@@ -10,6 +10,7 @@ import { ContactsPage } from "@/pages/ContactsPage";
 import { GroupsPage } from "@/pages/GroupsPage";
 import { SmtpSettingsPage } from "@/pages/SmtpSettingsPage";
 import { LogsPage } from "@/pages/LogsPage";
+import { EmailSearchPage } from "@/pages/EmailSearchPage";
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/groups" element={<GroupsPage />} />
         <Route path="/logs" element={<LogsPage />} />
+        <Route path="/email-search" element={<EmailSearchPage />} />
         <Route path="/smtp" element={<SmtpSettingsPage />} />
       </Route>
     </Routes>

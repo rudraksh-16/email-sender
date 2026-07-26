@@ -14,6 +14,7 @@ from app.models import Attachment, Campaign, CampaignStatus, EmailLog, EmailLogS
 from app.schemas.campaign import (
     CampaignCreate,
     CampaignDuplicateRequest,
+    CampaignEmailMatch,
     CampaignRead,
     EmailLogRead,
 )
@@ -206,6 +207,54 @@ async def list_campaigns(db: AsyncSession = Depends(get_db)) -> list[CampaignRea
             )
         )
     return result
+
+
+@router.get("/search-by-email", response_model=list[CampaignEmailMatch])
+async def search_by_email(
+    email: str,
+    db: AsyncSession = Depends(get_db),
+) -> list[CampaignEmailMatch]:
+    """Find every campaign a given email address was a recipient of.
+
+    Match is case-insensitive and exact. If the same address appears more than
+    once in one campaign, only its most recent log is returned for that campaign.
+    """
+    needle = email.strip().lower()
+    if not needle:
+        raise ValidationError("email is required")
+
+    rows = (
+        (
+            await db.execute(
+                select(EmailLog, Campaign)
+                .join(Campaign, EmailLog.campaign_id == Campaign.id)
+                .where(func.lower(EmailLog.to_email) == needle)
+                .order_by(EmailLog.created_at.desc())
+            )
+        )
+        .all()
+    )
+
+    matches: list[CampaignEmailMatch] = []
+    seen: set[str] = set()
+    for log, campaign in rows:
+        if campaign.id in seen:
+            continue
+        seen.add(campaign.id)
+        matches.append(
+            CampaignEmailMatch(
+                campaign_id=campaign.id,
+                campaign_name=campaign.name,
+                subject=campaign.subject,
+                campaign_status=campaign.status,
+                to_email=log.to_email,
+                email_status=log.status,
+                error_message=log.error_message,
+                sent_at=log.sent_at,
+                created_at=log.created_at,
+            )
+        )
+    return matches
 
 
 @router.post("", response_model=CampaignRead, status_code=status.HTTP_201_CREATED)

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Download } from "lucide-react";
+import Papa from "papaparse";
 import { campaignsApi } from "@/api/campaigns";
 import type { Page, EmailLog } from "@/api/types";
 import { Badge } from "@/components/ui/Badge";
@@ -9,7 +11,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
-import { fmtDate } from "@/lib/utils";
+import { fmtDate, downloadCsv } from "@/lib/utils";
 
 export function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -91,6 +93,20 @@ export function CampaignDetailPage() {
     },
   });
 
+  const exportCsv = async () => {
+    // Pull every recipient, not just the first page shown in the table.
+    const all = await campaignsApi.logs(id!, { limit: campaign?.total || 1000 });
+    const merged = all.items.map((l) => ({ email: l.to_email, ...(l.merge_data ?? {}) }));
+    const fields = Array.from(
+      merged.reduce((s, r) => {
+        Object.keys(r).forEach((k) => s.add(k));
+        return s;
+      }, new Set<string>(["email"])),
+    );
+    const csv = Papa.unparse({ fields, data: merged });
+    await downloadCsv(`${campaign?.name || "campaign"}-recipients.csv`, csv);
+  };
+
   if (isLoading || !campaign) {
     return <div className="flex justify-center py-16"><Spinner /></div>;
   }
@@ -158,8 +174,13 @@ export function CampaignDetailPage() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-medium text-gray-900 text-sm">Recipients ({logs?.total ?? 0})</h2>
+          {(logs?.total ?? 0) > 0 && (
+            <Button variant="ghost" size="sm" onClick={exportCsv}>
+              <Download size={14} /> Export CSV
+            </Button>
+          )}
         </div>
         <table className="w-full text-sm">
           <thead>

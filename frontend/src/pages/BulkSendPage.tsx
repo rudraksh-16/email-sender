@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Eye } from "lucide-react";
+import { Eye, Plus, Trash2, Download } from "lucide-react";
 import Papa from "papaparse";
 import { smtpApi } from "@/api/smtp";
 import { templatesApi } from "@/api/templates";
@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/Select";
 import { RichTextEditor } from "@/components/editor/RichTextEditor";
 import { AttachmentDropzone } from "@/components/AttachmentDropzone";
 import { Modal } from "@/components/ui/Modal";
+import { downloadCsv } from "@/lib/utils";
 
 type Row = Record<string, string>;
 
@@ -101,7 +102,41 @@ export function BulkSendPage() {
     onSuccess: (campaign) => navigate(`/campaigns/${campaign.id}`),
   });
 
-  const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+  const columns =
+    rows.length > 0
+      ? Object.keys(rows[0])
+      : Papa.parse<Row>(csvText.trim(), { header: true }).meta.fields ?? ["email"];
+
+  const verdictByIndex = new Map(report?.rows.map((r) => [r.index, r]) ?? []);
+
+  const syncCsv = (next: Row[]) => setCsvText(Papa.unparse({ fields: columns, data: next }));
+
+  const updateCell = (i: number, key: string, value: string) => {
+    const next = rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r));
+    setRows(next);
+    syncCsv(next);
+    setReport(null); // emails may have changed — old verdicts no longer apply
+  };
+
+  const deleteRow = (i: number) => {
+    const next = rows.filter((_, idx) => idx !== i);
+    setRows(next);
+    syncCsv(next);
+    setReport(null);
+    setExcluded(new Set()); // row indices shifted
+  };
+
+  const addRow = () => {
+    const blank = Object.fromEntries(columns.map((c) => [c, ""])) as Row;
+    const next = [...rows, blank];
+    setRows(next);
+    syncCsv(next);
+    setReport(null);
+  };
+
+  const exportCsv = () =>
+    downloadCsv(`${name.trim() || "recipients"}-cleaned.csv`, Papa.unparse({ fields: columns, data: keptRows }));
+
   const previewRow = rows[0] ?? {};
   const canSubmit = keptRows.length > 0 && (!useTemplate || !!templateId);
 
@@ -218,42 +253,92 @@ export function BulkSendPage() {
             <p className="text-sm text-red-600 mt-2">{String(verify.error)}</p>
           )}
 
-          {report && (
+          {rows.length > 0 && (
             <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden">
-              <div className="flex flex-wrap gap-3 px-3 py-2 bg-gray-50 text-xs border-b border-gray-200">
-                <span className="text-green-700">{report.summary.valid} valid</span>
-                <span className="text-red-700">{report.summary.invalid} invalid</span>
-                <span className="text-amber-700">{report.summary.duplicate} duplicate</span>
-                <span className="ml-auto text-gray-500">{keptRows.length} will be sent</span>
+              {report && (
+                <div className="flex flex-wrap gap-3 px-3 py-2 bg-gray-50 text-xs border-b border-gray-200">
+                  <span className="text-green-700">{report.summary.valid} valid</span>
+                  <span className="text-red-700">{report.summary.invalid} invalid</span>
+                  <span className="text-amber-700">{report.summary.duplicate} duplicate</span>
+                  <span className="ml-auto text-gray-500">{keptRows.length} will be sent</span>
+                </div>
+              )}
+              <div className="max-h-72 overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-white shadow-[0_1px_0_rgba(0,0,0,0.06)]">
+                    <tr className="text-left text-xs text-gray-500">
+                      <th className="px-2 py-2 w-8" />
+                      {columns.map((c) => (
+                        <th key={c} className="px-2 py-2 font-medium whitespace-nowrap">{c}</th>
+                      ))}
+                      {report && <th className="px-2 py-2 font-medium">status</th>}
+                      <th className="px-2 py-2 w-8" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, i) => {
+                      const kept = !excluded.has(i);
+                      const v = verdictByIndex.get(i);
+                      const color =
+                        !v
+                          ? ""
+                          : v.verdict === "valid"
+                            ? "text-green-700"
+                            : v.verdict === "duplicate"
+                              ? "text-amber-700"
+                              : "text-red-700";
+                      return (
+                        <tr key={i} className={`border-t border-gray-50 ${kept ? "" : "opacity-40"}`}>
+                          <td className="px-2 py-1 align-middle">
+                            <input
+                              type="checkbox"
+                              checked={kept}
+                              onChange={() => toggleExcluded(i)}
+                              className="rounded"
+                            />
+                          </td>
+                          {columns.map((c) => (
+                            <td key={c} className="px-1 py-1">
+                              <input
+                                value={row[c] ?? ""}
+                                onChange={(e) => updateCell(i, c, e.target.value)}
+                                spellCheck={false}
+                                className="w-full min-w-[8rem] font-mono text-xs bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 rounded px-1.5 py-1 focus:outline-none"
+                              />
+                            </td>
+                          ))}
+                          {report && (
+                            <td className="px-2 py-1 text-xs whitespace-nowrap">
+                              <span className={color}>{v?.verdict ?? "—"}</span>
+                              {v?.reason && (
+                                <span className="text-gray-400 ml-1" title={v.reason}>ⓘ</span>
+                              )}
+                            </td>
+                          )}
+                          <td className="px-2 py-1 text-right">
+                            <button
+                              type="button"
+                              onClick={() => deleteRow(i)}
+                              className="text-gray-400 hover:text-red-600"
+                              title="Remove recipient"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <ul className="max-h-56 overflow-y-auto divide-y divide-gray-100 text-sm">
-                {report.rows.map((row) => {
-                  const kept = !excluded.has(row.index);
-                  const color =
-                    row.verdict === "valid"
-                      ? "text-green-700"
-                      : row.verdict === "duplicate"
-                        ? "text-amber-700"
-                        : "text-red-700";
-                  return (
-                    <li key={row.index} className="flex items-center gap-2 px-3 py-1.5">
-                      <input
-                        type="checkbox"
-                        checked={kept}
-                        onChange={() => toggleExcluded(row.index)}
-                        className="rounded"
-                      />
-                      <span className="font-mono text-gray-800 truncate flex-1">{row.email}</span>
-                      <span className={`text-xs ${color}`}>{row.verdict}</span>
-                      {row.reason && (
-                        <span className="text-xs text-gray-400 truncate max-w-[40%]" title={row.reason}>
-                          {row.reason}
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
+              <div className="flex items-center gap-1 px-3 py-2 bg-gray-50 border-t border-gray-200">
+                <Button type="button" variant="ghost" size="sm" onClick={addRow}>
+                  <Plus size={14} /> Add recipient
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={exportCsv}>
+                  <Download size={14} /> Export CSV ({keptRows.length})
+                </Button>
+              </div>
             </div>
           )}
 

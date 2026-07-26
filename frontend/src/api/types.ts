@@ -98,6 +98,18 @@ export interface EmailLog {
   updated_at: string;
 }
 
+export interface CampaignEmailMatch {
+  campaign_id: string;
+  campaign_name: string;
+  subject: string;
+  campaign_status: CampaignStatus;
+  to_email: string;
+  email_status: EmailLogStatus;
+  error_message?: string;
+  sent_at?: string;
+  created_at: string;
+}
+
 export interface Attachment {
   id: string;
   filename: string;

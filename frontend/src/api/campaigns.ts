@@ -1,8 +1,12 @@
 import { api } from "./client";
-import type { Campaign, EmailLog, Page } from "./types";
+import type { Campaign, CampaignEmailMatch, EmailLog, Page } from "./types";
 
 export const campaignsApi = {
   list: () => api.get<Campaign[]>("/campaigns").then((r) => r.data),
+  searchByEmail: (email: string) =>
+    api
+      .get<CampaignEmailMatch[]>("/campaigns/search-by-email", { params: { email } })
+      .then((r) => r.data),
   get: (id: string) => api.get<Campaign>(`/campaigns/${id}`).then((r) => r.data),
   create: (data: object) => api.post<Campaign>("/campaigns", data).then((r) => r.data),
   fromCsv: (form: FormData) =>

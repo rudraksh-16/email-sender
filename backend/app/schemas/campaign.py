@@ -52,6 +52,20 @@ class EmailLogRead(TimestampedDTO):
     sent_at: datetime | None
 
 
+class CampaignEmailMatch(BaseModel):
+    """One campaign an email address appears in, with that recipient's status."""
+
+    campaign_id: str
+    campaign_name: str
+    subject: str
+    campaign_status: CampaignStatus
+    to_email: str
+    email_status: EmailLogStatus
+    error_message: str | None
+    sent_at: datetime | None
+    created_at: datetime
+
+
 class CampaignDuplicateRequest(BaseModel):
     """Clone an existing campaign into a fresh one and queue it.
 
