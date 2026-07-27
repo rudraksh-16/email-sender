@@ -21,4 +21,5 @@ class SmtpAccount(Base, TimestampMixin):
     from_name: Mapped[str | None] = mapped_column(String(255))
     max_per_minute: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     max_per_hour: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
+    max_per_day: Mapped[int] = mapped_column(Integer, default=2000, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

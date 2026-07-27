@@ -1,4 +1,5 @@
 """SMTP account CRUD + connection test."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
@@ -32,6 +33,7 @@ def _to_read(row: SmtpAccount) -> SmtpAccountRead:
         from_name=row.from_name,
         max_per_minute=row.max_per_minute,
         max_per_hour=row.max_per_hour,
+        max_per_day=row.max_per_day,
         is_default=row.is_default,
         has_password=bool(row.password_encrypted),
         created_at=row.created_at,

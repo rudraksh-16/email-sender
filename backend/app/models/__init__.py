@@ -3,6 +3,7 @@
 Importing this package triggers every submodule so Alembic autogenerate and
 Base.metadata see the full model graph.
 """
+
 from __future__ import annotations
 
 from app.models.attachment import Attachment, email_log_attachments

@@ -10,6 +10,7 @@ export interface SmtpAccount {
   from_name?: string;
   max_per_minute: number;
   max_per_hour: number;
+  max_per_day: number;
   is_default: boolean;
   has_password: boolean;
   created_at: string;
@@ -28,6 +29,7 @@ export interface SmtpAccountCreate {
   from_name?: string;
   max_per_minute?: number;
   max_per_hour?: number;
+  max_per_day?: number;
   is_default?: boolean;
 }
 
@@ -94,6 +96,18 @@ export interface EmailLog {
   sent_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CampaignEmailMatch {
+  campaign_id: string;
+  campaign_name: string;
+  subject: string;
+  campaign_status: CampaignStatus;
+  to_email: string;
+  email_status: EmailLogStatus;
+  error_message?: string;
+  sent_at?: string;
+  created_at: string;
 }
 
 export interface Attachment {

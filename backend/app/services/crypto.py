@@ -3,6 +3,7 @@
 Key lives under ``user_data_dir/key`` (0o600). Auto-generated on first use.
 Plaintext is never logged.
 """
+
 from __future__ import annotations
 
 from functools import lru_cache

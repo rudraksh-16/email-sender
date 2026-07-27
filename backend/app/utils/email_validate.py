@@ -1,4 +1,5 @@
 """Thin wrapper around email-validator."""
+
 from __future__ import annotations
 
 from email_validator import EmailNotValidError, validate_email

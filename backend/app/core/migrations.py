@@ -1,4 +1,5 @@
 """Run Alembic migrations programmatically on app startup."""
+
 from __future__ import annotations
 
 import logging

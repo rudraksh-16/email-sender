@@ -1,8 +1,12 @@
 import { api } from "./client";
-import type { Campaign, EmailLog, Page } from "./types";
+import type { Campaign, CampaignEmailMatch, EmailLog, Page } from "./types";
 
 export const campaignsApi = {
   list: () => api.get<Campaign[]>("/campaigns").then((r) => r.data),
+  searchByEmail: (email: string) =>
+    api
+      .get<CampaignEmailMatch[]>("/campaigns/search-by-email", { params: { email } })
+      .then((r) => r.data),
   get: (id: string) => api.get<Campaign>(`/campaigns/${id}`).then((r) => r.data),
   create: (data: object) => api.post<Campaign>("/campaigns", data).then((r) => r.data),
   fromCsv: (form: FormData) =>
@@ -12,6 +16,11 @@ export const campaignsApi = {
       })
       .then((r) => r.data),
   cancel: (id: string) => api.post<Campaign>(`/campaigns/${id}/cancel`).then((r) => r.data),
+  duplicate: (id: string, body: { recipients: "all" | "sent" | "failed"; name?: string }) =>
+    api.post<Campaign>(`/campaigns/${id}/duplicate`, body).then((r) => r.data),
+  delete: (id: string) => api.delete(`/campaigns/${id}`),
+  retryFailed: (id: string) =>
+    api.post<Campaign>(`/campaigns/${id}/retry-failed`).then((r) => r.data),
   logs: (id: string, params?: { limit?: number; offset?: number }) =>
     api.get<Page<EmailLog>>(`/campaigns/${id}/logs`, { params }).then((r) => r.data),
   retryLog: (logId: string) =>

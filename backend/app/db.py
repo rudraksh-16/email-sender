@@ -3,6 +3,7 @@
 SQLite pragmas (WAL, foreign_keys=ON, synchronous=NORMAL) are installed on
 every new connection via an event listener on the underlying sync engine.
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator

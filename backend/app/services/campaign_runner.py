@@ -1,8 +1,10 @@
 """Bulk-send orchestrator.
 
-Spawned by FastAPI BackgroundTasks per campaign. Pulls queued EmailLog rows,
-renders + sanitises + sends each, updates status, respects the rate limiter.
+Spawned by FastAPI BackgroundTasks per campaign. Fetches queued EmailLog rows
+in batches, sends them concurrently (up to _CONCURRENCY at once), updates
+counters atomically, and respects the per-account rate limiter.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +12,8 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update as sql_update
+from sqlalchemy.orm import make_transient
 
 from app.db import get_session_factory
 from app.models import (
@@ -28,15 +31,17 @@ from app.utils.errors import SmtpSendError
 
 logger = logging.getLogger(__name__)
 
+_CONCURRENCY = 10
+
 
 async def _load_attachments(campaign_id: str) -> list[SmtpAttachment]:
     Session = get_session_factory()
     async with Session() as session:
         rows = (
-            await session.execute(
-                select(Attachment).where(Attachment.campaign_id == campaign_id)
-            )
-        ).scalars().all()
+            (await session.execute(select(Attachment).where(Attachment.campaign_id == campaign_id)))
+            .scalars()
+            .all()
+        )
         return [
             SmtpAttachment(
                 filename=row.filename,
@@ -64,6 +69,7 @@ async def _process_row(
             account.id,
             per_minute=account.max_per_minute,
             per_hour=account.max_per_hour,
+            per_day=account.max_per_day,
         )
 
         merge = json.loads(log.merge_data) if log.merge_data else {}
@@ -101,11 +107,30 @@ async def _process_row(
         await session.commit()
 
 
+async def _send_one(
+    campaign_id: str,
+    log_id: str,
+    account: SmtpAccount,
+    attachments: list[SmtpAttachment],
+    sem: asyncio.Semaphore,
+) -> bool:
+    async with sem:
+        Session = get_session_factory()
+        async with Session() as session:
+            campaign = await session.get(Campaign, campaign_id)
+            log = await session.get(EmailLog, log_id)
+            if log is None or campaign is None:
+                return False
+            return await _process_row(session, campaign, account, log, attachments)
+
+
 async def run_campaign(campaign_id: str) -> None:
     Session = get_session_factory()
     logger.info("Starting campaign %s", campaign_id)
     attachments = await _load_attachments(campaign_id)
+    sem = asyncio.Semaphore(_CONCURRENCY)
 
+    # Validate + load account; detach so it's safe across concurrent sessions.
     async with Session() as session:
         campaign = await session.get(Campaign, campaign_id)
         if campaign is None:
@@ -119,54 +144,69 @@ async def run_campaign(campaign_id: str) -> None:
             campaign.status = CampaignStatus.failed
             await session.commit()
             return
+        await session.refresh(account)
+        make_transient(account)
 
+    async with Session() as session:
+        campaign = await session.get(Campaign, campaign_id)
         campaign.status = CampaignStatus.running
         campaign.started_at = datetime.now(timezone.utc)
         await session.commit()
 
-        while True:
-            # Re-check status (cancel support).
+    while True:
+        # Check for cancellation and fetch next batch of log IDs.
+        async with Session() as session:
             refreshed = await session.get(Campaign, campaign_id)
             if refreshed and refreshed.status == CampaignStatus.cancelled:
                 logger.info("Campaign %s cancelled", campaign_id)
                 return
 
-            log = (
+            logs = (
                 await session.execute(
                     select(EmailLog)
                     .where(
                         EmailLog.campaign_id == campaign_id,
-                        EmailLog.status.in_(
-                            [EmailLogStatus.queued, EmailLogStatus.retrying]
-                        ),
+                        EmailLog.status.in_([EmailLogStatus.queued, EmailLogStatus.retrying]),
                     )
-                    .limit(1)
+                    .limit(_CONCURRENCY)
                 )
-            ).scalar_one_or_none()
+            ).scalars().all()
 
-            if log is None:
+            if not logs:
                 break
+            log_ids = [log.id for log in logs]
 
-            ok = await _process_row(session, campaign, account, log, attachments)
-            if ok:
-                campaign.sent_count += 1
-            else:
-                campaign.failed_count += 1
+        results = await asyncio.gather(
+            *[_send_one(campaign_id, lid, account, attachments, sem) for lid in log_ids]
+        )
+        sent = sum(1 for ok in results if ok)
+        failed = len(results) - sent
+
+        async with Session() as session:
+            await session.execute(
+                sql_update(Campaign)
+                .where(Campaign.id == campaign_id)
+                .values(
+                    sent_count=Campaign.sent_count + sent,
+                    failed_count=Campaign.failed_count + failed,
+                )
+            )
             await session.commit()
-            # Tiny yield to keep responsiveness under heavy loops.
-            await asyncio.sleep(0)
 
-        campaign.status = (
-            CampaignStatus.done if campaign.failed_count == 0 else CampaignStatus.failed
-        )
-        campaign.finished_at = datetime.now(timezone.utc)
-        await session.commit()
-        logger.info(
-            "Campaign %s finished sent=%s failed=%s",
-            campaign_id,
-            campaign.sent_count,
-            campaign.failed_count,
-        )
+    async with Session() as session:
+        campaign = await session.get(Campaign, campaign_id)
+        if campaign:
+            campaign.status = (
+                CampaignStatus.done if campaign.failed_count == 0 else CampaignStatus.failed
+            )
+            campaign.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+            logger.info(
+                "Campaign %s finished sent=%s failed=%s",
+                campaign_id,
+                campaign.sent_count,
+                campaign.failed_count,
+            )
 
 
 async def retry_log(log_id: str) -> bool:
@@ -184,15 +224,23 @@ async def retry_log(log_id: str) -> bool:
         if account is None:
             return False
         attachments = await _load_attachments(campaign.id)
-        was_failed = log.status == EmailLogStatus.failed
+        if log.status != EmailLogStatus.failed:
+            return False
         log.status = EmailLogStatus.retrying
         await session.commit()
         ok = await _process_row(session, campaign, account, log, attachments)
-        # Reconcile campaign counters.
-        if was_failed and ok:
-            campaign.failed_count = max(0, campaign.failed_count - 1)
-            campaign.sent_count += 1
+        if ok:
+            await session.execute(
+                sql_update(Campaign)
+                .where(Campaign.id == campaign.id)
+                .values(
+                    failed_count=Campaign.failed_count - 1,
+                    sent_count=Campaign.sent_count + 1,
+                )
+            )
+            await session.commit()
+            await session.refresh(campaign)
             if campaign.status == CampaignStatus.failed and campaign.failed_count == 0:
                 campaign.status = CampaignStatus.done
-            await session.commit()
+                await session.commit()
         return ok

@@ -3,6 +3,7 @@
 In-memory, single-process. Two buckets per account (per-minute, per-hour).
 Buckets reset on app restart — documented as a known limit.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -54,22 +55,31 @@ class RateLimiter:
         *,
         per_minute: int,
         per_hour: int,
+        per_day: int,
     ) -> None:
         while True:
+            wait = 0.0
             async with self._lock:
                 now = time.monotonic()
-                per_min = self._bucket((account_id, "min"), per_minute, 60.0)
-                per_hr = self._bucket((account_id, "hr"), per_hour, 3600.0)
-                wait_min = per_min.take(now)
-                if wait_min > 0:
-                    wait = wait_min
+                m_b = self._bucket((account_id, "min"), per_minute, 60.0)
+                h_b = self._bucket((account_id, "hr"), per_hour, 3600.0)
+                d_b = self._bucket((account_id, "day"), per_day, 86400.0)
+                w_m = m_b.take(now)
+                if w_m > 0:
+                    wait = w_m
                 else:
-                    wait_hr = per_hr.take(now)
-                    if wait_hr <= 0:
-                        return
-                    # Roll back the per-minute token we tentatively took.
-                    per_min.tokens = min(per_min.capacity, per_min.tokens + 1)
-                    wait = wait_hr
+                    w_h = h_b.take(now)
+                    if w_h > 0:
+                        m_b.tokens = min(m_b.capacity, m_b.tokens + 1)
+                        wait = w_h
+                    else:
+                        w_d = d_b.take(now)
+                        if w_d > 0:
+                            m_b.tokens = min(m_b.capacity, m_b.tokens + 1)
+                            h_b.tokens = min(h_b.capacity, h_b.tokens + 1)
+                            wait = w_d
+            if wait <= 0:
+                return
             await asyncio.sleep(wait)
 
 

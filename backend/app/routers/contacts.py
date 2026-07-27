@@ -1,4 +1,5 @@
 """Contacts CRUD + CSV import."""
+
 from __future__ import annotations
 
 import json
@@ -60,9 +61,7 @@ async def list_contacts(
 
 
 @router.post("", response_model=ContactRead, status_code=status.HTTP_201_CREATED)
-async def create_contact(
-    payload: ContactCreate, db: AsyncSession = Depends(get_db)
-) -> ContactRead:
+async def create_contact(payload: ContactCreate, db: AsyncSession = Depends(get_db)) -> ContactRead:
     row = Contact(
         email=payload.email,
         first_name=payload.first_name,

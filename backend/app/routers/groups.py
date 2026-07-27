@@ -1,4 +1,5 @@
 """Contact groups CRUD + membership management."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
@@ -122,9 +123,7 @@ async def delete_group(group_id: str, db: AsyncSession = Depends(get_db)) -> Non
 
 
 @router.post("/{group_id}/members/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def add_member(
-    group_id: str, contact_id: str, db: AsyncSession = Depends(get_db)
-) -> None:
+async def add_member(group_id: str, contact_id: str, db: AsyncSession = Depends(get_db)) -> None:
     group = (
         await db.execute(
             select(ContactGroup)
@@ -143,9 +142,7 @@ async def add_member(
 
 
 @router.delete("/{group_id}/members/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def remove_member(
-    group_id: str, contact_id: str, db: AsyncSession = Depends(get_db)
-) -> None:
+async def remove_member(group_id: str, contact_id: str, db: AsyncSession = Depends(get_db)) -> None:
     group = (
         await db.execute(
             select(ContactGroup)

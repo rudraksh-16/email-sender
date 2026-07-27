@@ -1,4 +1,5 @@
 """Single-message send (no campaign tracking)."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -27,8 +28,10 @@ async def send_single(
     attachments: list[SmtpAttachment] = []
     if payload.attachment_ids:
         rows = (
-            await db.execute(select(Attachment).where(Attachment.id.in_(payload.attachment_ids)))
-        ).scalars().all()
+            (await db.execute(select(Attachment).where(Attachment.id.in_(payload.attachment_ids))))
+            .scalars()
+            .all()
+        )
         for row in rows:
             attachments.append(
                 SmtpAttachment(

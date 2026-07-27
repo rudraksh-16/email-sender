@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { Trash2 } from "lucide-react";
 import { campaignsApi } from "@/api/campaigns";
 import { smtpApi } from "@/api/smtp";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { fmtDate } from "@/lib/utils";
 import type { Campaign } from "@/api/types";
@@ -26,6 +28,12 @@ function ProgressBar({ campaign }: { campaign: Campaign }) {
 }
 
 export function DashboardPage() {
+  const qc = useQueryClient();
+  const remove = useMutation({
+    mutationFn: (id: string) => campaignsApi.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
+  });
+
   const { data: campaigns, isLoading } = useQuery({
     queryKey: ["campaigns"],
     queryFn: campaignsApi.list,
@@ -90,6 +98,7 @@ export function DashboardPage() {
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">Progress</th>
                 <th className="px-5 py-3 font-medium">Created</th>
+                <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody>
@@ -107,6 +116,23 @@ export function DashboardPage() {
                     <ProgressBar campaign={c} />
                   </td>
                   <td className="px-5 py-3 text-gray-500">{fmtDate(c.created_at)}</td>
+                  <td className="px-5 py-3 text-right">
+                    {!["queued", "running"].includes(c.status) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Delete campaign"
+                        loading={remove.isPending && remove.variables === c.id}
+                        onClick={() => {
+                          if (confirm(`Delete campaign "${c.name}"? This can't be undone.`)) {
+                            remove.mutate(c.id);
+                          }
+                        }}
+                      >
+                        <Trash2 size={15} className="text-gray-400 hover:text-red-600" />
+                      </Button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

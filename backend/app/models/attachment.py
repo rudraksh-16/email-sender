@@ -8,8 +8,18 @@ from app.models.base import Base, TimestampMixin, uuid_str
 email_log_attachments = Table(
     "email_log_attachments",
     Base.metadata,
-    Column("email_log_id", String(36), ForeignKey("email_logs.id", ondelete="CASCADE"), primary_key=True),
-    Column("attachment_id", String(36), ForeignKey("attachments.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "email_log_id",
+        String(36),
+        ForeignKey("email_logs.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "attachment_id",
+        String(36),
+        ForeignKey("attachments.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
 )
 
 

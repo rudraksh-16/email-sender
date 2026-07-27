@@ -1,4 +1,5 @@
 """Jinja2 sandboxed renderer."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping

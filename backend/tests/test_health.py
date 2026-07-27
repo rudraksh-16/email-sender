@@ -22,8 +22,8 @@ def test_placeholder_index(client) -> None:
 def test_openapi_lists_all_routers(client) -> None:
     r = client.get("/openapi.json")
     assert r.status_code == 200
-    tags = {t for path in r.json()["paths"].values()
-            for op in path.values()
-            for t in op.get("tags", [])}
+    tags = {
+        t for path in r.json()["paths"].values() for op in path.values() for t in op.get("tags", [])
+    }
     # Health + system + every resource router should at least be wired in.
     assert {"health", "system"}.issubset(tags)

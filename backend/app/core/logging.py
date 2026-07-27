@@ -3,6 +3,7 @@
 Called once from the FastAPI lifespan; idempotent so repeated calls (e.g. in
 tests) don't stack handlers.
 """
+
 from __future__ import annotations
 
 import logging

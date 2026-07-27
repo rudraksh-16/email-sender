@@ -8,6 +8,7 @@ import {
   UsersRound,
   Settings,
   ScrollText,
+  MailSearch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ const links = [
   { to: "/contacts", icon: Users, label: "Contacts" },
   { to: "/groups", icon: UsersRound, label: "Groups" },
   { to: "/logs", icon: ScrollText, label: "Logs" },
+  { to: "/email-search", icon: MailSearch, label: "Email Search" },
   { to: "/smtp", icon: Settings, label: "SMTP Settings" },
 ];
 
